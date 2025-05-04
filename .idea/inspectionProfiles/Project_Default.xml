@@ -1,0 +1,44 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="VulnerableLibrariesLocal" enabled="true" level="INFORMATION" enabled_by_default="true">
+      <option name="isIgnoringEnabled" value="true" />
+      <option name="ignoredModules">
+        <list>
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+          <option value="Dispatcher" />
+        </list>
+      </option>
+      <option name="ignoredPackages">
+        <list>
+          <option value="ch.qos.logback:logback-classic:1.2.11" />
+          <option value="ch.qos.logback:logback-core:1.2.11" />
+          <option value="org.yaml:snakeyaml:1.30" />
+          <option value="com.fasterxml.jackson.core:jackson-core:2.13.4" />
+          <option value="org.apache.tomcat.embed:tomcat-embed-core:9.0.68" />
+          <option value="org.apache.tomcat.embed:tomcat-embed-websocket:9.0.68" />
+          <option value="org.springframework:spring-web:5.3.23" />
+          <option value="org.springframework:spring-webmvc:5.3.23" />
+        </list>
+      </option>
+      <option name="ignoredReasons">
+        <list>
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="In progress" />
+          <option value="Not exploitable" />
+          <option value="Not exploitable" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
