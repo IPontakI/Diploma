@@ -1,6 +1,7 @@
 package diploma.university.service.impl;
 
 import diploma.university.service.ConsumerService;
+import diploma.university.service.MainService;
 import diploma.university.service.ProducerService;
 import lombok.extern.log4j.Log4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -13,22 +14,17 @@ import static diploma.university.model.RabbitQueue.*;
 @Service
 @Log4j
 public class ConsumerServiceImpl implements ConsumerService {
-    private final ProducerService producerService;
+    private final MainService mainService;
 
-    public ConsumerServiceImpl(ProducerService producerService) {
-        this.producerService = producerService;
+    public ConsumerServiceImpl(MainService mainService) {
+        this.mainService = mainService;
     }
 
     @Override
     @RabbitListener(queues = TEXT_MESSAGE_UPDATE)
     public void consumeTextMessageUpdates(Update update) {
         log.debug("Node: text message received");
-
-        var message = update.getMessage();
-        var sendMessage = new SendMessage();
-        sendMessage.setChatId(message.getChatId().toString());
-        sendMessage.setText("Hello from NODE");
-        producerService.produceAnswear(sendMessage);
+        mainService.processTextMessage(update);
     }
 
     @Override
