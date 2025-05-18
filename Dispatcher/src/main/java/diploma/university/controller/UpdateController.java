@@ -35,7 +35,7 @@ public class UpdateController {
             return;
         }
 
-        if (update.getMessage() != null){
+        if (update.hasMessage()){
             distributeMessageByType(update);
         }else {
             log.error("Unsupported message type received:" + update);
@@ -44,11 +44,11 @@ public class UpdateController {
 
     private void distributeMessageByType(Update update) {
         var message = update.getMessage();
-        if (message.getText() != null){
+        if (message.hasText()){
             processTextMessage(update);
-        } else if (message.getDocument() != null){
+        } else if (message.hasDocument()){
             processDocMessage(update);
-        }else if (message.getPhoto() != null){
+        }else if (message.hasPhoto()){
             processPhotoMessage(update);
         }else{
             setUnsupportedMessage(update);
@@ -73,17 +73,17 @@ public class UpdateController {
 
     private void processPhotoMessage(Update update) {
         updateProducer.produce(PHOTO_MESSAGE_UPDATE, update);
-        setFileIsReceivedView(update);
+//        setFileIsReceivedView(update); //Unused method
     }
 
     private void processDocMessage(Update update) {
         updateProducer.produce(DOC_MESSAGE_UPDATE, update);
-        setFileIsReceivedView(update);
+//        setFileIsReceivedView(update); //Unused method
     }
 
     private void processTextMessage(Update update) {
         updateProducer.produce(TEXT_MESSAGE_UPDATE, update);
-        setFileIsReceivedView(update);
+//        setFileIsReceivedView(update); //Unused method
 
 //        String text = update.getMessage().getText();
 //        Long chatId = update.getMessage().getChatId();

@@ -6,7 +6,7 @@
   </component>
   <component name="DBNavigator.Project.DataEditorManager">
     <record-view-column-sorting-type value="BY_INDEX" />
-    <value-preview-text-wrapping value="true" />
+    <value-preview-text-wrapping value="false" />
     <value-preview-pinned value="false" />
   </component>
   <component name="DBNavigator.Project.DatabaseAssistantManager">
@@ -24,7 +24,8 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="76ddbcd6-d7cb-4c58-bd4d-685496e4679c">
-      <console name="DyplomaDB@localhost" type="STANDARD" schema="public" session="Main" />
+      <console name="DyplomaDB@localhost" type="STANDARD" schema="public" session="Main"><![CDATA[SELECT * FROM public.binary_content
+ORDER BY id ASC]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -38,6 +39,11 @@
   </component>
   <component name="DBNavigator.Project.DatasetFilterManager">
     <filter-actions connection-id="76ddbcd6-d7cb-4c58-bd4d-685496e4679c" dataset="pg_catalog.pg_amproc" active-filter-id="" />
+    <filter-actions connection-id="76ddbcd6-d7cb-4c58-bd4d-685496e4679c" dataset="public.binary_content" active-filter-id="96865322-b871-4186-b5a1-28546f4b9bbf">
+      <filter id="96865322-b871-4186-b5a1-28546f4b9bbf" name="Filter" temporary="false" custom-name="false" type="basic" join-type="AND">
+        <condition column="id" operator="=" value="" active="true" />
+      </filter>
+    </filter-actions>
   </component>
   <component name="DBNavigator.Project.ExecutionManager">
     <retain-sticky-names value="false" />

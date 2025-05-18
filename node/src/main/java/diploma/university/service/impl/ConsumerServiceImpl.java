@@ -2,11 +2,9 @@ package diploma.university.service.impl;
 
 import diploma.university.service.ConsumerService;
 import diploma.university.service.MainService;
-import diploma.university.service.ProducerService;
 import lombok.extern.log4j.Log4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 
 import static diploma.university.model.RabbitQueue.*;
@@ -31,11 +29,13 @@ public class ConsumerServiceImpl implements ConsumerService {
     @RabbitListener(queues = DOC_MESSAGE_UPDATE)
     public void consumeDocMessageUpdates(Update update) {
         log.debug("Node: doc message received");
+        mainService.processDocMessage(update);
     }
 
     @Override
     @RabbitListener(queues = PHOTO_MESSAGE_UPDATE)
     public void consumePhotoMessageUpdates(Update update) {
         log.debug("Node: photo message received");
+        mainService.processPhotoMessage(update);
     }
 }
