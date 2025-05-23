@@ -7,6 +7,7 @@ import diploma.university.entity.AppPhoto;
 import diploma.university.entity.AppUser;
 import diploma.university.entity.RawData;
 import diploma.university.exeptions.UploadFileException;
+import diploma.university.service.AppUserService;
 import diploma.university.service.FileService;
 import diploma.university.service.MainService;
 import diploma.university.service.ProducerService;
@@ -31,13 +32,15 @@ public class MainServiceImpl implements MainService {
     private final ProducerService producerService;
     private final AppUserDAO appUserDAO;
     private final FileService fileService;
+    private final AppUserService appUserService;
 
 
-    public MainServiceImpl(RawDataDAO rawDataDAOl, ProducerService producerService, AppUserDAO appUserDAO, FileService fileService) {
+    public MainServiceImpl(RawDataDAO rawDataDAOl, ProducerService producerService, AppUserDAO appUserDAO, FileService fileService, AppUserService appUserService) {
         this.rawDataDAO = rawDataDAOl;
         this.producerService = producerService;
         this.appUserDAO = appUserDAO;
         this.fileService = fileService;
+        this.appUserService = appUserService;
     }
 
     @Override
@@ -81,7 +84,7 @@ public class MainServiceImpl implements MainService {
             }
             sendAnswer(output, chatId);
         } else if (WAIT_FOR_EMAIL_STATE.equals(userState)) {
-            //TODO додати обробку емейлу
+            output = appUserService.setEmail(appUser, text);
         }else {
             log.error("Unknown user state: " + userState);
             output = "Невідома помилка, введіть /cancel і спробуйте ще раз!";
@@ -153,8 +156,7 @@ public class MainServiceImpl implements MainService {
     private String processServiceCommand(AppUser appUser, String text) {
         var serviceCommands = ServiceCommands.fromValue(text);
         if (REGISTRATION.equals(serviceCommands)){
-            //TODO додати реєстрацію
-            return "Тимчасово недоступно.";
+            return appUserService.registerUser(appUser);
         }else if (LOG_IN.equals(serviceCommands)) {
             //TODO додати логіку входу
             return "Функція входу тимчасово недоступна.";
@@ -182,20 +184,19 @@ public class MainServiceImpl implements MainService {
 
     private AppUser findOrSaveAppUser(Update update){
         User telegramUser = update.getMessage().getFrom();
-        AppUser persistantAppUser = appUserDAO.findAppUserByTelegramUserId(telegramUser.getId());
-        if (persistantAppUser == null){
+        var optional = appUserDAO.findByTelegramUserId(telegramUser.getId());
+        if (optional.isEmpty()){
             AppUser transientAppUser = AppUser.builder()
                     .telegramUserId(telegramUser.getId())
                     .username(telegramUser.getUserName())
                     .firstName(telegramUser.getFirstName())
                     .lastName(telegramUser.getLastName())
-                    //TODO змінити значення за замовчунванням після додавання реєстрації
-                    .isActive(true)
+                    .isActive(false)
                     .state(BASIC_STATE)
                     .build();
             return appUserDAO.save(transientAppUser);
         }
-        return persistantAppUser;
+        return optional.get();
     }
 
     private SendMessage buildStartMenu(Long chatId) {

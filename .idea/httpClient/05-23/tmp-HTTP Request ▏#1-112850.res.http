@@ -1,0 +1,8 @@
+// Status: 200, time: 5,573ms, size: 0 B
+### HTTP Request ▏#1
+POST http://127.0.0.1:8087/mail/send HTTP/1.1
+content-length: 0
+date: Fri, 23 May 2025 08:28:50 GMT
+
+
+>> D:\!Валик\Универ\Dyplom\Charity App\.idea\httpClient\05-23\HTTP Request ▏#1\2025-05-23T112850.txt

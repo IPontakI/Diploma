@@ -1,0 +1,10 @@
+// Size: 58 B
+### HTTP Request ▏#1
+POST http://127.0.0.1:8087/mail/send HTTP/1.1
+Content-Type: application/json
+Content-Length: 58
+
+{
+"id": "Hla6aj7",
+"emailTo": "bahaw95721@nomrista.com"
+}

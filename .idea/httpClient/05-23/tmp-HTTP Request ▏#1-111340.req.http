@@ -1,0 +1,10 @@
+// Size: 62 B
+### HTTP Request ▏#1
+POST http://127.0.0.1:8087/mail/send HTTP/1.1
+Content-Type: application/json
+Content-Length: 62
+
+{
+"id": "Hla6aj7",
+"emailTo": "dyploma.charity-app@ukr.net"
+}

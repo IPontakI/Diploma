@@ -1,0 +1,15 @@
+// Status: 500, time: 9,022ms, size: 110 B
+### HTTP Request ▏#1
+POST http://127.0.0.1:8087/mail/send HTTP/1.1
+connection: close
+content-type: application/json
+date: Fri, 23 May 2025 08:14:31 GMT
+transfer-encoding: chunked
+
+{
+  "timestamp": "2025-05-23T08:14:31.398+00:00",
+  "status": 500,
+  "error": "Internal Server Error",
+  "path": "/mail/send"
+}
+>> D:\!Валик\Универ\Dyplom\Charity App\.idea\httpClient\05-23\HTTP Request ▏#1\2025-05-23T111431.json

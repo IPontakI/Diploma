@@ -1,0 +1,6 @@
+{
+  "timestamp": "2025-05-23T08:13:40.846+00:00",
+  "status": 500,
+  "error": "Internal Server Error",
+  "path": "/mail/send"
+}
