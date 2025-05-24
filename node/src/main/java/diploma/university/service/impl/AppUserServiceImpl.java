@@ -37,9 +37,9 @@ public class AppUserServiceImpl implements AppUserService {
             return "На вашу пошту було надіслано лист для верифікації, " +
                     "перевірте розділ spam.";
         }
-        appUser.setState(WAIT_FOR_EMAIL_STATE);
+        appUser.setState(WAIT_FOR_USERNAME_STATE);
         appUserDAO.save(appUser);
-        return "Введіть ваш email:";
+        return "Введіть ваш нікнейм:";
     }
 
     @Override
