@@ -64,6 +64,33 @@ public class MainServiceImpl implements MainService {
 //
 //        var chatId = update.getMessage().getChatId();
 //        sendAnswer(output, chatId);
+//        saveRowData(update);
+//        var appUser = findOrSaveAppUser(update);
+//        var userState = appUser.getState();
+//        var text = update.getMessage().getText();
+//        var chatId = update.getMessage().getChatId();
+//        var output = "";
+//
+//        var serviceCommands = ServiceCommands.fromValue(text);
+//        if (CANCEL.equals(serviceCommands)){
+//            output = cancelProcess(appUser);
+//        } else if (BASIC_STATE.equals(userState)) {
+//            output = processServiceCommand(appUser, text);
+//            // Якщо маркер показати меню — надсилаємо його окремо:
+//            if ("__SHOW_START_MENU__".equals(output)) {
+//                SendMessage startMenu = buildStartMenu(chatId);
+//                producerService.produceAnswear(startMenu);
+//                return;
+//            }
+//            sendAnswer(output, chatId);
+//        } else if (WAIT_FOR_EMAIL_STATE.equals(userState)) {
+//            output = appUserService.setEmail(appUser, text);
+//        }else {
+//            log.error("Unknown user state: " + userState);
+//            output = "Невідома помилка, введіть /cancel і спробуйте ще раз!";
+//            sendAnswer(output, chatId);
+//        }
+//        sendAnswer(output, chatId);
         saveRowData(update);
         var appUser = findOrSaveAppUser(update);
         var userState = appUser.getState();
@@ -72,9 +99,14 @@ public class MainServiceImpl implements MainService {
         var output = "";
 
         var serviceCommands = ServiceCommands.fromValue(text);
-        if (CANCEL.equals(serviceCommands)){
+
+        if (CANCEL.equals(serviceCommands)) {
             output = cancelProcess(appUser);
-        } else if (BASIC_STATE.equals(userState)) {
+            sendAnswer(output, chatId);
+            return;
+        }
+
+        if (BASIC_STATE.equals(userState)) {
             output = processServiceCommand(appUser, text);
             // Якщо маркер показати меню — надсилаємо його окремо:
             if ("__SHOW_START_MENU__".equals(output)) {
@@ -83,14 +115,17 @@ public class MainServiceImpl implements MainService {
                 return;
             }
             sendAnswer(output, chatId);
-        } else if (WAIT_FOR_EMAIL_STATE.equals(userState)) {
-            output = appUserService.setEmail(appUser, text);
-        }else {
-            log.error("Unknown user state: " + userState);
-            output = "Невідома помилка, введіть /cancel і спробуйте ще раз!";
-            sendAnswer(output, chatId);
+            return;
         }
 
+        if (WAIT_FOR_EMAIL_STATE.equals(userState)) {
+            output = appUserService.setEmail(appUser, text);
+            sendAnswer(output, chatId);
+            return;
+        }
+
+        log.error("Unknown user state: " + userState);
+        output = "Невідома помилка, введіть /cancel і спробуйте ще раз!";
         sendAnswer(output, chatId);
     }
 
@@ -155,19 +190,35 @@ public class MainServiceImpl implements MainService {
 
     private String processServiceCommand(AppUser appUser, String text) {
         var serviceCommands = ServiceCommands.fromValue(text);
-        if (REGISTRATION.equals(serviceCommands)){
-            return appUserService.registerUser(appUser);
-        }else if (LOG_IN.equals(serviceCommands)) {
-            //TODO додати логіку входу
+
+        if ("Увійти".equalsIgnoreCase(text) || LOG_IN.equals(serviceCommands)) {
             return "Функція входу тимчасово недоступна.";
-        }        else if (HELP.equals(serviceCommands)){
+        } else if ("Зареєструватися".equalsIgnoreCase(text) || REGISTRATION.equals(serviceCommands)) {
+            return appUserService.registerUser(appUser);
+        } else if (HELP.equals(serviceCommands)) {
             return help();
         } else if (START.equals(serviceCommands)) {
             return "__SHOW_START_MENU__";
-        }else {
+        } else {
             return "Невідома команда! Перегляньте список доступних команд /help";
         }
     }
+
+//    private String processServiceCommand(AppUser appUser, String text) {
+//        var serviceCommands = ServiceCommands.fromValue(text);
+//        if (REGISTRATION.equals(serviceCommands)){
+//            return appUserService.registerUser(appUser);
+//        }else if (LOG_IN.equals(serviceCommands)) {
+//            //TODO додати логіку входу
+//            return "Функція входу тимчасово недоступна.";
+//        }        else if (HELP.equals(serviceCommands)){
+//            return help();
+//        } else if (START.equals(serviceCommands)) {
+//            return "__SHOW_START_MENU__";
+//        }else {
+//            return "Невідома команда! Перегляньте список доступних команд /help";
+//        }
+//    }
 
     private String help() {
         return "Список доступних команд:\n"

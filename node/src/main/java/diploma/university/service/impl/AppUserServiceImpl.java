@@ -48,7 +48,8 @@ public class AppUserServiceImpl implements AppUserService {
             InternetAddress emailAddr = new InternetAddress(email);
             emailAddr.validate();
         } catch (AddressException e) {
-            return  "Введіть коректний email. Для відміни натисніть /cancel";
+            return  "Введіть, будь ласка, коректну адресу електронної пошти.  \n" +
+                    "Для скасування реєстрації натисніть /cancel.\n";
         }
         var optional = appUserDAO.findByEmail(email);
         if (optional.isEmpty()){
@@ -60,17 +61,18 @@ public class AppUserServiceImpl implements AppUserService {
             var response = sendRequestToMailService(cryptoUserId, email);
             if (response.getStatusCode() != HttpStatus.OK){
                 var msg = String.format(
-                        "Не вдалось надіслати лист на пошту %s.",email);
+                        "Не вдалося надіслати лист на адресу %s.  \n" +
+                                "Перевірте коректність введеної електронної пошти або спробуйте ще раз пізніше.\n",email);
                 log.error(msg);
                 appUser.setEmail(null);
                 appUserDAO.save(appUser);
                 return msg;
             }
-            return "На вашу пошту було надіслано лист для верифікації, " +
-                    "перевірте розділ spam.";
+            return "Лист із посиланням для підтвердження реєстрації надіслано на вашу електронну пошту.  \n" +
+                    "Перейдіть за посиланням у листі, щоб завершити реєстрацію.";
         }else {
-            return  "Цей email вже використовується, введіть новий." +
-                    " Для відміни натисніть /cancel";
+            return  "Ця електронна адреса вже використовується.  \n" +
+                    "Введіть іншу адресу або натисніть /cancel для скасування реєстрації.";
         }
     }
 
@@ -84,10 +86,10 @@ public class AppUserServiceImpl implements AppUserService {
                 .emailTo(email)
                 .build();
         var request = new HttpEntity<>(mailParams, headers);
-            return restTemplate.exchange(mailServiceUri,
-                    HttpMethod.POST,
-                    request,
-                    String.class);
+        return restTemplate.exchange(mailServiceUri,
+                HttpMethod.POST,
+                request,
+                String.class);
 
     }
 }
