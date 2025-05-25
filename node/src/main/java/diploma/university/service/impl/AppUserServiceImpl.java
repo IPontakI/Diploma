@@ -32,7 +32,7 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     public String registerUser(AppUser appUser) {
         if (appUser.getIsActive()){
-            return "Ви вже зареєстровані, увійдіь в ваш акаунт.";
+            return "Ви вже зареєстровані, увійдіть в ваш акаунт.";
         } else if (appUser.getEmail() != null) {
             return "На вашу пошту було надіслано лист для верифікації, " +
                     "перевірте розділ spam.";
@@ -54,7 +54,7 @@ public class AppUserServiceImpl implements AppUserService {
         var optional = appUserDAO.findByEmail(email);
         if (optional.isEmpty()){
             appUser.setEmail(email);
-            appUser.setState(BASIC_STATE);
+            appUser.setState(IN_MAIN_MENU);
             appUser = appUserDAO.save(appUser);
 
             var cryptoUserId = cryptoTool.hashOf(appUser.getId());
