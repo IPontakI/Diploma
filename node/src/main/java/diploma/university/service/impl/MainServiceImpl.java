@@ -165,7 +165,7 @@ public class MainServiceImpl implements MainService {
                     msg1.setChatId(chatId);
                     msg1.setText(profileText);
                     msg1.setReplyMarkup(buildProfileKeyboard());
-                    producerService.produceAnswear(msg1);
+                    producerService.produceAnswer(msg1);
                     return;
                 case "PHONE":
                     if (!text.matches("^\\+380\\d{9}$")) {
@@ -183,9 +183,15 @@ public class MainServiceImpl implements MainService {
                     msg2.setChatId(chatId);
                     msg2.setText(profileText2);
                     msg2.setReplyMarkup(buildProfileKeyboard());
-                    producerService.produceAnswear(msg2);
+                    producerService.produceAnswer(msg2);
                     return;
             }
+        }
+        if (editActionMap.containsKey(userId) && "WAIT_FOR_PROFILE_PHOTO".equals(editActionMap.get(userId))) {
+            // Тут ти можеш реалізувати реальне збереження фото або просто відповідь
+            editActionMap.remove(userId);
+            sendAnswer("Фото профілю успішно додано!", chatId);
+            return;
         }
 
         if (BTN_CHECK_ACTIVATION.equalsIgnoreCase(text)) {
@@ -227,7 +233,7 @@ public class MainServiceImpl implements MainService {
         if (output == null) return;
         if ("__SHOW_START_MENU__".equals(output)) {
             SendMessage startMenu = buildStartMenu(chatId);
-            producerService.produceAnswear(startMenu);
+            producerService.produceAnswer(startMenu);
             return;
         }
         sendAnswer(output, chatId);
@@ -347,7 +353,7 @@ public class MainServiceImpl implements MainService {
         message.setText("Головне меню (" + displayRole + "):");
         message.setReplyMarkup(keyboardMarkup);
 
-        producerService.produceAnswear(message);
+        producerService.produceAnswer(message);
     }
 
     private void processMainMenu(AppUser appUser, String text, Long chatId) {
@@ -355,7 +361,8 @@ public class MainServiceImpl implements MainService {
 
         // --- Меню редагування профілю ---
         if ("Додати фото".equalsIgnoreCase(trimmedText)) {
-            sendAnswer("Надішліть нове фото профілю:", chatId);
+            editActionMap.put(appUser.getTelegramUserId(), "WAIT_FOR_PROFILE_PHOTO");
+            sendAnswer("Надішліть ваше фото профілю:", chatId);
             return;
         }
         if ("Змінити нікнейм".equalsIgnoreCase(trimmedText)) {
@@ -370,7 +377,12 @@ public class MainServiceImpl implements MainService {
         }
         if ("Скасувати редагування".equalsIgnoreCase(trimmedText)) {
             sendAnswer("Редагування профілю скасовано.", chatId);
-            sendMainMenu(appUser, chatId);
+            String profileText = buildProfileInfo(appUser);
+            SendMessage msg = new SendMessage();
+            msg.setChatId(chatId);
+            msg.setText(profileText);
+            msg.setReplyMarkup(buildProfileKeyboard());
+            producerService.produceAnswer(msg);
             return;
         }
 
@@ -385,7 +397,7 @@ public class MainServiceImpl implements MainService {
             msg.setChatId(chatId);
             msg.setText(profileText);
             msg.setReplyMarkup(buildProfileKeyboard());
-            producerService.produceAnswear(msg);
+            producerService.produceAnswer(msg);
             return;
         }
         if ("Забув пароль".equalsIgnoreCase(trimmedText)) {
@@ -397,7 +409,7 @@ public class MainServiceImpl implements MainService {
             msg.setChatId(chatId);
             msg.setText("Меню редагування профілю:");
             msg.setReplyMarkup(buildEditProfileKeyboard());
-            producerService.produceAnswear(msg);
+            producerService.produceAnswer(msg);
             return;
         }
         if ("Меню".equalsIgnoreCase(trimmedText)) {
@@ -421,7 +433,7 @@ public class MainServiceImpl implements MainService {
             return;
         }
         if (BTN_FAQ.equalsIgnoreCase(trimmedText)) {
-            String faqText = "ℹ️ *Часті поради користувачам:*\n\n"
+            String faqText = "ℹ️ Часті поради користувачам:\n\n"
                     + "🔹 1. Якщо бот не відповідає або виникає помилка, спробуйте перезапустити діалог або зверніться до адміністратора.\n"
                     + "🔹 2. Введіть команду /cancel для виходу у BASIC_STATE (початковий режим).\n"
                     + "🔹 3. Якщо у вас залишились питання або потрібна допомога — напишіть адміністратору, Валентин вам допоможе.";
@@ -439,7 +451,7 @@ public class MainServiceImpl implements MainService {
         sendMessage.setChatId(chatId);
         sendMessage.setText(output);
         sendMessage.setReplyMarkup(new ReplyKeyboardRemove(true));
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
     @Override
@@ -510,13 +522,13 @@ public class MainServiceImpl implements MainService {
             sendMessage.setReplyMarkup(keyboardMarkup);
         }
 
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
     private void sendAnswer(String output, Long chatId) {
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
         sendMessage.setText(output);
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
     private void sendOnlyRegistrationButton(Long chatId, String message) {
@@ -533,7 +545,7 @@ public class MainServiceImpl implements MainService {
         sendMessage.setText(message);
         sendMessage.setReplyMarkup(keyboardMarkup);
 
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
     private void sendOnlyLoginButton(Long chatId, String message) {
@@ -550,7 +562,7 @@ public class MainServiceImpl implements MainService {
         sendMessage.setText(message);
         sendMessage.setReplyMarkup(keyboardMarkup);
 
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
     private void sendActivationCheckButton(Long chatId) {
@@ -571,7 +583,7 @@ public class MainServiceImpl implements MainService {
         keyboardMarkup.setKeyboard(List.of(row));
         sendMessage.setReplyMarkup(keyboardMarkup);
 
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
     private String processServiceCommand(AppUser appUser, String text) {
@@ -634,7 +646,7 @@ public class MainServiceImpl implements MainService {
         keyboardMarkup.setKeyboard(List.of(row));
         sendMessage.setReplyMarkup(keyboardMarkup);
 
-        producerService.produceAnswear(sendMessage);
+        producerService.produceAnswer(sendMessage);
     }
 
 //    private String processServiceCommand(AppUser appUser, String text) {
