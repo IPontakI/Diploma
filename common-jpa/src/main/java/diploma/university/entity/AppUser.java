@@ -25,11 +25,11 @@ public class AppUser {
     private String firstName;
     private String lastName;
     private String telegramUsername;
-    private String username;    //new
-    private String password;    //new
-    private String tempPassword; // Для зберігання незбереженого пароля між кроками (не зберігаємо в БД)
-    private String role;        //new
-    private String phoneNumber; //new
+    private String username;
+    private String password;
+    private String tempPassword;
+    private String role;
+    private String phoneNumber;
     private String email;
     private Boolean isActive;
     @Enumerated(EnumType.STRING)

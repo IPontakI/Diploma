@@ -1,29 +1,30 @@
 package diploma.university.service.impl;
 
 import diploma.university.dao.AppUserDAO;
+import diploma.university.dao.HelpCardDAO;
 import diploma.university.dao.RawDataDAO;
-import diploma.university.entity.AppDocument;
-import diploma.university.entity.AppPhoto;
-import diploma.university.entity.AppUser;
-import diploma.university.entity.RawData;
+import diploma.university.entity.*;
+import diploma.university.entity.enums.CardImportance;
 import diploma.university.entity.enums.UserState;
 import diploma.university.exeptions.UploadFileException;
-import diploma.university.service.AppUserService;
-import diploma.university.service.FileService;
-import diploma.university.service.MainService;
-import diploma.university.service.ProducerService;
+import diploma.university.service.*;
 import diploma.university.service.enums.ServiceCommands;
 import lombok.extern.log4j.Log4j;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static diploma.university.entity.enums.UserState.BASIC_STATE;
 import static diploma.university.service.enums.ServiceCommands.*;
@@ -36,8 +37,11 @@ public class MainServiceImpl implements MainService {
     private final AppUserDAO appUserDAO;
     private final FileService fileService;
     private final AppUserService appUserService;
+    private final HelpCardDAO helpCardDAO;
 
     private final Map<Long, String> editActionMap = new ConcurrentHashMap<>();
+    private final Map<Long, CardCreationSession> cardSessionMap = new ConcurrentHashMap<>();
+
 
     private static final String BTN_CARDS = "Картки";
     private static final String BTN_PROFILE = "Профіль";
@@ -51,12 +55,13 @@ public class MainServiceImpl implements MainService {
     private static final String BTN_CHECK_ACTIVATION = "Я активував акаунт";
 
 
-    public MainServiceImpl(RawDataDAO rawDataDAOl, ProducerService producerService, AppUserDAO appUserDAO, FileService fileService, AppUserService appUserService) {
+    public MainServiceImpl(RawDataDAO rawDataDAOl, ProducerService producerService, AppUserDAO appUserDAO, FileService fileService, AppUserService appUserService, HelpCardDAO helpCardDAO) {
         this.rawDataDAO = rawDataDAOl;
         this.producerService = producerService;
         this.appUserDAO = appUserDAO;
         this.fileService = fileService;
         this.appUserService = appUserService;
+        this.helpCardDAO = helpCardDAO;
     }
 
     @Override
@@ -150,6 +155,14 @@ public class MainServiceImpl implements MainService {
         var chatId = update.getMessage().getChatId();
 
         Long userId = appUser.getTelegramUserId();
+
+        if ("Меню".equalsIgnoreCase(text.trim())) {
+            appUser.setState(UserState.IN_MAIN_MENU);
+            appUserDAO.save(appUser);
+            sendMainMenu(appUser, chatId);
+            return;
+        }
+
         if (editActionMap.containsKey(userId)) {
             String action = editActionMap.get(userId);
             switch (action) {
@@ -187,8 +200,410 @@ public class MainServiceImpl implements MainService {
                     return;
             }
         }
+        if (userState == UserState.CREATE_CARD_TITLE) {
+            editActionMap.put(appUser.getTelegramUserId(), text); // Зберігаємо назву
+            appUser.setState(UserState.CREATE_CARD_DESCRIPTION);
+            appUserDAO.save(appUser);
+            sendAnswer("Опишіть проблему/запит:", chatId);
+            return;
+        }
+
+        if (userState == UserState.CREATE_CARD_DESCRIPTION) {
+            String title = editActionMap.get(appUser.getTelegramUserId());
+            CardCreationSession session = cardSessionMap.getOrDefault(appUser.getTelegramUserId(), new CardCreationSession());
+            session.setTitle(title);
+            session.setDescription(text);
+            cardSessionMap.put(appUser.getTelegramUserId(), session);
+
+            appUser.setState(UserState.CREATE_CARD_CONTACT);
+            appUserDAO.save(appUser);
+            sendAnswer("Вкажіть контактну інформацію:", chatId);
+            return;
+        }
+
+        if (userState == UserState.CREATE_CARD_CONTACT) {
+            CardCreationSession session = cardSessionMap.get(appUser.getTelegramUserId());
+            session.setContact(text);
+            cardSessionMap.put(appUser.getTelegramUserId(), session);
+
+            appUser.setState(UserState.CREATE_CARD_IMPORTANCE);
+            appUserDAO.save(appUser);
+
+            SendMessage impMsg = new SendMessage();
+            impMsg.setChatId(chatId);
+            impMsg.setText("Оберіть важливість картки:");
+            impMsg.setReplyMarkup(buildImportanceKeyboard());
+            producerService.produceAnswer(impMsg);
+            return;
+        }
+
+        if (userState == UserState.CREATE_CARD_IMPORTANCE) {
+            String input = text.trim().toUpperCase();
+            if (!input.equals("LOW") && !input.equals("MEDIUM") && !input.equals("HIGH")) {
+                SendMessage impMsg = new SendMessage();
+                impMsg.setChatId(chatId);
+                impMsg.setText("❗️ Виберіть важливість, натиснувши одну з кнопок нижче:");
+                impMsg.setReplyMarkup(buildImportanceKeyboard());
+                producerService.produceAnswer(impMsg);
+                return;
+            }
+
+            CardCreationSession session = cardSessionMap.get(appUser.getTelegramUserId());
+            session.setImportance(CardImportance.valueOf(input));
+
+            HelpCard card = new HelpCard();
+            card.setTitle(session.getTitle());
+            card.setDescription(session.getDescription());
+            card.setContact(session.getContact());
+            card.setImportance(session.getImportance());
+            card.setCreator(appUser);
+            card.setStatus("Відкрита");
+            helpCardDAO.save(card);
+
+            SendMessage doneMsg = new SendMessage();
+            doneMsg.setChatId(chatId);
+            doneMsg.setText("Картку успішно створено!");
+            doneMsg.setReplyMarkup(new ReplyKeyboardRemove(true));
+            producerService.produceAnswer(doneMsg);
+
+            showCreatedCard(card, chatId);
+
+            cardSessionMap.remove(appUser.getTelegramUserId());
+            appUser.setState(UserState.IN_MAIN_MENU);
+            appUserDAO.save(appUser);
+
+            sendMainMenu(appUser, chatId);
+            return;
+        }
+
+        if (userState == UserState.VIEW_CARDS_LIST) {
+            try {
+                Long cardId = Long.parseLong(text.trim());
+                Optional<HelpCard> cardOpt = helpCardDAO.findByIdAndIsDeletedFalse(cardId);
+                if (cardOpt.isPresent() && "Відкрита".equals(cardOpt.get().getStatus())) {
+                    showVolunteerCardDetails(cardOpt.get(), chatId, appUser);
+                    appUser.setState(UserState.VIEW_CARD_DETAILS);
+                    appUserDAO.save(appUser);
+                } else {
+                    sendAnswer("Картку з таким id не знайдено або вона вже взята.", chatId);
+                }
+            } catch (NumberFormatException ex) {
+                sendAnswer("Введіть лише id картки (наприклад: 3).", chatId);
+            }
+            return;
+        }
+
+        if (userState == UserState.VIEW_CARD_DETAILS) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+
+            if ("Назад".equalsIgnoreCase(text.trim())) {
+                showAllCardsForVolunteer(chatId, appUser);
+                appUser.setState(UserState.VIEW_CARDS_LIST);
+                appUserDAO.save(appUser);
+                return;
+            }
+
+            if ("Взяти картку".equalsIgnoreCase(text.trim()) && lastCardId != null) {
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+                if (cardOpt.isPresent() && "Відкрита".equals(cardOpt.get().getStatus())) {
+                    HelpCard card = cardOpt.get();
+                    card.setStatus("Виконується");
+                    card.setVolunteer(appUser);
+                    helpCardDAO.save(card);
+                    sendAnswer("Ви взяли картку. Дякуємо за вашу допомогу!", chatId);
+
+                    showAllCardsForVolunteer(chatId, appUser);
+                    appUser.setState(UserState.VIEW_CARDS_LIST);
+                    appUserDAO.save(appUser);
+                } else {
+                    sendAnswer("Картку вже взяв хтось інший або вона недоступна.", chatId);
+                    showAllCardsForVolunteer(chatId, appUser);
+                    appUser.setState(UserState.VIEW_CARDS_LIST);
+                    appUserDAO.save(appUser);
+                }
+                editActionMap.remove(appUser.getTelegramUserId());
+                return;
+            }
+            sendAnswer("Оберіть дію з кнопок нижче.", chatId);
+            return;
+        }
+
+        if (userState == UserState.VIEW_TAKEN_CARDS_LIST) {
+            // Отримуємо список id карток, які виводились
+            String cardIdsStr = editActionMap.get(appUser.getTelegramUserId());
+            if (cardIdsStr == null) {
+                sendAnswer("Щось пішло не так. Спробуйте ще раз.", chatId);
+                return;
+            }
+            List<Long> cardIds = Arrays.stream(cardIdsStr.replaceAll("[\\[\\] ]", "").split(","))
+                    .filter(s -> !s.isEmpty())
+                    .map(Long::parseLong)
+                    .collect(Collectors.toList());
+
+            try {
+                int chosenNumber = Integer.parseInt(text.trim());
+                if (chosenNumber < 1 || chosenNumber > cardIds.size()) {
+                    sendAnswer("Введіть коректний номер картки.", chatId);
+                    return;
+                }
+                Long chosenCardId = cardIds.get(chosenNumber - 1);
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(chosenCardId);
+                if (cardOpt.isPresent() && "Виконується".equals(cardOpt.get().getStatus())
+                        && appUser.equals(cardOpt.get().getVolunteer())) {
+                    showVolunteerActiveCardDetails(cardOpt.get(), chatId, appUser);
+                    appUser.setState(UserState.VIEW_TAKEN_CARD_DETAILS);
+                    appUserDAO.save(appUser);
+                    editActionMap.put(appUser.getTelegramUserId(), chosenCardId.toString());
+                } else {
+                    sendAnswer("Картку не знайдено або вона вже неактивна.", chatId);
+                }
+            } catch (NumberFormatException e) {
+                sendAnswer("Введіть лише номер картки, наприклад: 1", chatId);
+            }
+            return;
+        }
+
+        if (userState == UserState.VIEW_TAKEN_CARD_DETAILS) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+
+            if ("Назад".equalsIgnoreCase(text.trim())) {
+                showVolunteerTakenCards(appUser, chatId);
+                appUser.setState(UserState.VIEW_TAKEN_CARDS_LIST);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Завершити".equalsIgnoreCase(text.trim()) && lastCardId != null) {
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+                if (cardOpt.isPresent() && appUser.equals(cardOpt.get().getVolunteer())) {
+                    HelpCard card = cardOpt.get();
+                    card.setStatus("Неактивна");
+                    helpCardDAO.save(card);
+                    sendAnswer("Завдання завершене!", chatId);
+                    showVolunteerTakenCards(appUser, chatId);
+                    appUser.setState(UserState.VIEW_TAKEN_CARDS_LIST);
+                    appUserDAO.save(appUser);
+                } else {
+                    sendAnswer("Картку не знайдено або вона вже неактивна.", chatId);
+                }
+                editActionMap.remove(appUser.getTelegramUserId());
+                return;
+            }
+            if ("Відмінити".equalsIgnoreCase(text.trim()) && lastCardId != null) {
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+                if (cardOpt.isPresent() && appUser.equals(cardOpt.get().getVolunteer())) {
+                    HelpCard card = cardOpt.get();
+                    card.setStatus("Відкрита");
+                    card.setVolunteer(null); // звільняємо картку
+                    helpCardDAO.save(card);
+                    sendAnswer("Завдання повернено у відкриті!", chatId);
+                    showVolunteerTakenCards(appUser, chatId);
+                    appUser.setState(UserState.VIEW_TAKEN_CARDS_LIST);
+                    appUserDAO.save(appUser);
+                } else {
+                    sendAnswer("Картку не знайдено або вона вже неактивна.", chatId);
+                }
+                editActionMap.remove(appUser.getTelegramUserId());
+                return;
+            }
+            sendAnswer("Оберіть дію з кнопок нижче.", chatId);
+            return;
+        }
+
+        if (userState == UserState.VIEW_OWN_CARDS_LIST) {
+            try {
+                Long cardId = Long.parseLong(text.trim());
+                Optional<HelpCard> cardOpt = helpCardDAO.findByIdAndIsDeletedFalse(cardId);
+                if (cardOpt.isPresent() && cardOpt.get().getCreator().getId().equals(appUser.getId())) {
+                    showOwnCardDetails(cardOpt.get(), chatId, appUser);
+                    appUser.setState(UserState.VIEW_OWN_CARD_DETAILS);
+                    appUserDAO.save(appUser);
+                } else {
+                    sendAnswer("Картку з таким id не знайдено або вона не ваша.", chatId);
+                }
+            } catch (NumberFormatException ex) {
+                sendAnswer("Введіть лише id картки (наприклад: 12).", chatId);
+            }
+            return;
+        }
+
+        if (userState == UserState.VIEW_OWN_CARD_DETAILS) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+
+            if ("Назад".equalsIgnoreCase(text.trim())) {
+                showMyCards(appUser, chatId);
+                appUser.setState(UserState.VIEW_OWN_CARDS_LIST);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Видалити".equalsIgnoreCase(text.trim()) && lastCardId != null) {
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+                if (cardOpt.isPresent()) {
+                    HelpCard card = cardOpt.get();
+                    card.setIsDeleted(true);
+                    helpCardDAO.save(card);
+                    sendAnswer("Картку видалено.", chatId);
+                } else {
+                    sendAnswer("Картку не знайдено.", chatId);
+                }
+                showMyCards(appUser, chatId);
+                appUser.setState(UserState.VIEW_OWN_CARDS_LIST);
+                appUserDAO.save(appUser);
+                editActionMap.remove(appUser.getTelegramUserId());
+                return;
+            }
+            if ("Редагувати".equalsIgnoreCase(text.trim()) && lastCardId != null) {
+                SendMessage editMenuMsg = new SendMessage();
+                editMenuMsg.setChatId(chatId);
+                editMenuMsg.setText("Що саме бажаєте змінити?");
+                editMenuMsg.setReplyMarkup(buildEditCardKeyboard());
+                producerService.produceAnswer(editMenuMsg);
+
+                editActionMap.put(appUser.getTelegramUserId(), lastCardIdStr);
+                appUser.setState(UserState.EDIT_CARD_MENU);
+                appUserDAO.save(appUser);
+                return;
+            }
+            sendAnswer("Оберіть дію з кнопок нижче.", chatId);
+            return;
+        }
+
+        if (userState == UserState.EDIT_CARD_MENU) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+
+            if ("Назва".equalsIgnoreCase(text.trim())) {
+                sendAnswer("Введіть нову назву картки:", chatId);
+                appUser.setState(UserState.EDIT_CARD_TITLE);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Опис".equalsIgnoreCase(text.trim())) {
+                sendAnswer("Введіть новий опис картки:", chatId);
+                appUser.setState(UserState.EDIT_CARD_DESCRIPTION);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Контакти".equalsIgnoreCase(text.trim())) {
+                sendAnswer("Введіть нові контакти:", chatId);
+                appUser.setState(UserState.EDIT_CARD_CONTACT);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Важливість".equalsIgnoreCase(text.trim())) {
+                SendMessage impMsg = new SendMessage();
+                impMsg.setChatId(chatId);
+                impMsg.setText("Оберіть нову важливість картки:");
+                impMsg.setReplyMarkup(buildImportanceKeyboard());
+                producerService.produceAnswer(impMsg);
+                appUser.setState(UserState.EDIT_CARD_IMPORTANCE);
+                appUserDAO.save(appUser);
+                return;
+            }
+            if ("Назад".equalsIgnoreCase(text.trim())) {
+                // Повертаємось до перегляду картки
+                Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+                if (cardOpt.isPresent()) {
+                    showOwnCardDetails(cardOpt.get(), chatId, appUser);
+                    appUser.setState(UserState.VIEW_OWN_CARD_DETAILS);
+                    appUserDAO.save(appUser);
+                }
+                return;
+            }
+            sendAnswer("Оберіть дію з меню нижче.", chatId);
+            return;
+        }
+
+        if (userState == UserState.EDIT_CARD_TITLE) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+            Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+            if (cardOpt.isPresent()) {
+                HelpCard card = cardOpt.get();
+                card.setTitle(text);
+                helpCardDAO.save(card);
+                sendAnswer("Назву картки оновлено.", chatId);
+            }
+            // Повертаємось у меню редагування
+            appUser.setState(UserState.EDIT_CARD_MENU);
+            appUserDAO.save(appUser);
+            SendMessage editMenuMsg = new SendMessage();
+            editMenuMsg.setChatId(chatId);
+            editMenuMsg.setText("Що ще бажаєте змінити?");
+            editMenuMsg.setReplyMarkup(buildEditCardKeyboard());
+            producerService.produceAnswer(editMenuMsg);
+            return;
+        }
+        if (userState == UserState.EDIT_CARD_DESCRIPTION) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+            Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+            if (cardOpt.isPresent()) {
+                HelpCard card = cardOpt.get();
+                card.setDescription(text);
+                helpCardDAO.save(card);
+                sendAnswer("Опис картки оновлено.", chatId);
+            }
+            appUser.setState(UserState.EDIT_CARD_MENU);
+            appUserDAO.save(appUser);
+            SendMessage editMenuMsg = new SendMessage();
+            editMenuMsg.setChatId(chatId);
+            editMenuMsg.setText("Що ще бажаєте змінити?");
+            editMenuMsg.setReplyMarkup(buildEditCardKeyboard());
+            producerService.produceAnswer(editMenuMsg);
+            return;
+        }
+        if (userState == UserState.EDIT_CARD_CONTACT) {
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+            Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+            if (cardOpt.isPresent()) {
+                HelpCard card = cardOpt.get();
+                card.setContact(text);
+                helpCardDAO.save(card);
+                sendAnswer("Контакти картки оновлено.", chatId);
+            }
+            appUser.setState(UserState.EDIT_CARD_MENU);
+            appUserDAO.save(appUser);
+            SendMessage editMenuMsg = new SendMessage();
+            editMenuMsg.setChatId(chatId);
+            editMenuMsg.setText("Що ще бажаєте змінити?");
+            editMenuMsg.setReplyMarkup(buildEditCardKeyboard());
+            producerService.produceAnswer(editMenuMsg);
+            return;
+        }
+        if (userState == UserState.EDIT_CARD_IMPORTANCE) {
+            String input = text.trim().toUpperCase();
+            if (!input.equals("LOW") && !input.equals("MEDIUM") && !input.equals("HIGH")) {
+                SendMessage impMsg = new SendMessage();
+                impMsg.setChatId(chatId);
+                impMsg.setText("❗️ Виберіть важливість, натиснувши одну з кнопок нижче:");
+                impMsg.setReplyMarkup(buildImportanceKeyboard());
+                producerService.produceAnswer(impMsg);
+                return;
+            }
+            String lastCardIdStr = editActionMap.get(appUser.getTelegramUserId());
+            Long lastCardId = lastCardIdStr != null ? Long.parseLong(lastCardIdStr) : null;
+            Optional<HelpCard> cardOpt = helpCardDAO.findById(lastCardId);
+            if (cardOpt.isPresent()) {
+                HelpCard card = cardOpt.get();
+                card.setImportance(CardImportance.valueOf(input));
+                helpCardDAO.save(card);
+                sendAnswer("Важливість картки оновлено.", chatId);
+            }
+            appUser.setState(UserState.EDIT_CARD_MENU);
+            appUserDAO.save(appUser);
+            SendMessage editMenuMsg = new SendMessage();
+            editMenuMsg.setChatId(chatId);
+            editMenuMsg.setText("Що ще бажаєте змінити?");
+            editMenuMsg.setReplyMarkup(buildEditCardKeyboard());
+            producerService.produceAnswer(editMenuMsg);
+            return;
+        }
+        
         if (editActionMap.containsKey(userId) && "WAIT_FOR_PROFILE_PHOTO".equals(editActionMap.get(userId))) {
-            // Тут ти можеш реалізувати реальне збереження фото або просто відповідь
             editActionMap.remove(userId);
             sendAnswer("Фото профілю успішно додано!", chatId);
             return;
@@ -202,7 +617,7 @@ public class MainServiceImpl implements MainService {
                 sendMainMenu(appUser, chatId);
             } else {
                 sendAnswer("Ваш акаунт ще не активовано. Перейдіть за посиланням у листі й спробуйте ще раз.", chatId);
-                sendActivationCheckButton(chatId); // Ще раз показати кнопку
+                sendActivationCheckButton(chatId);
             }
             return;
         }
@@ -237,6 +652,156 @@ public class MainServiceImpl implements MainService {
             return;
         }
         sendAnswer(output, chatId);
+    }
+
+    private void showOwnCardDetails(HelpCard card, Long chatId, AppUser user) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Ваша картка:\n");
+        sb.append("ID: ").append(card.getId()).append("\n");
+        sb.append("Назва: ").append(card.getTitle()).append("\n");
+        sb.append("Опис: ").append(card.getDescription()).append("\n");
+        sb.append("Контакт: ").append(card.getContact()).append("\n");
+        sb.append("Важливість: ").append(card.getImportance()).append("\n");
+        sb.append("Статус: ").append(card.getStatus()).append("\n");
+        if (card.getVolunteer() != null) {
+            sb.append("Волонтер: ").append(card.getVolunteer().getUsername()).append("\n");
+        }
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildOwnCardActionKeyboard());
+        producerService.produceAnswer(message);
+
+        editActionMap.put(user.getTelegramUserId(), card.getId().toString());
+    }
+
+    private ReplyKeyboardMarkup buildOwnCardActionKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row1 = new KeyboardRow();
+        row1.add("Редагувати");
+        row1.add("Видалити");
+
+        KeyboardRow row2 = new KeyboardRow();
+        row2.add("Назад");
+
+        keyboardMarkup.setKeyboard(List.of(row1, row2));
+        return keyboardMarkup;
+    }
+
+    private void showVolunteerActiveCardDetails(HelpCard card, Long chatId, AppUser user) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Картка:\n");
+        sb.append("Назва: ").append(card.getTitle()).append("\n");
+        sb.append("Опис: ").append(card.getDescription()).append("\n");
+        sb.append("Контакт: ").append(card.getContact()).append("\n");
+        sb.append("Важливість: ").append(card.getImportance()).append("\n");
+        sb.append("Статус: ").append(card.getStatus()).append("\n");
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildVolunteerTakenCardActionKeyboard());
+        producerService.produceAnswer(message);
+    }
+    private ReplyKeyboardMarkup buildVolunteerTakenCardActionKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row = new KeyboardRow();
+        row.add("Завершити");
+        row.add("Відмінити");
+        KeyboardRow row2 = new KeyboardRow();
+        row2.add("Назад");
+        keyboardMarkup.setKeyboard(List.of(row, row2));
+        return keyboardMarkup;
+    }
+
+    private void showVolunteerCardDetails(HelpCard card, Long chatId, AppUser user) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Картка:\n");
+        sb.append("Назва: ").append(card.getTitle()).append("\n");
+        sb.append("Опис: ").append(card.getDescription()).append("\n");
+        sb.append("Контакт: ").append(card.getContact()).append("\n");
+        sb.append("Важливість: ").append(card.getImportance()).append("\n");
+        sb.append("Статус: ").append(card.getStatus()).append("\n");
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildVolunteerCardActionKeyboard());
+        producerService.produceAnswer(message);
+
+        editActionMap.put(user.getTelegramUserId(), card.getId().toString());
+    }
+
+    private ReplyKeyboardMarkup buildVolunteerCardActionKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row = new KeyboardRow();
+        row.add("Взяти картку");
+        row.add("Назад");
+
+        keyboardMarkup.setKeyboard(List.of(row));
+        return keyboardMarkup;
+    }
+
+    private void showCreatedCard(HelpCard card, Long chatId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Ваша картка допомоги:\n\n");
+        sb.append("Назва: ").append(card.getTitle()).append("\n");
+        sb.append("Опис: ").append(card.getDescription()).append("\n");
+        sb.append("Контакт: ").append(card.getContact()).append("\n");
+        sb.append("Важливість: ").append(card.getImportance()).append("\n");
+        sb.append("Статус: ").append(card.getStatus()).append("\n");
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        producerService.produceAnswer(message);
+    }
+    private void showMyCards(AppUser user, Long chatId) {
+        List<HelpCard> cards = helpCardDAO.findByCreatorAndIsDeletedFalse(user);
+
+        StringBuilder sb = new StringBuilder();
+        if (cards.isEmpty()) {
+            sb.append("У вас ще немає створених карток.");
+        } else {
+            sb.append("Ваші картки:\n\n");
+            for (HelpCard card : cards) {
+                sb.append(card.getId())
+                        .append(". ")
+                        .append(card.getTitle())
+                        .append(" (Статус: ")
+                        .append(card.getStatus())
+                        .append(")\n");
+            }
+            sb.append("\nДля дій з карткою введіть її id (наприклад: 12)");
+        }
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildMenuKeyboard());
+
+        producerService.produceAnswer(message);
+
+        user.setState(UserState.VIEW_OWN_CARDS_LIST);
+        appUserDAO.save(user);
+    }
+
+    private ReplyKeyboardMarkup buildMenuKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row = new KeyboardRow();
+        row.add("Меню");
+
+        keyboardMarkup.setKeyboard(List.of(row));
+        return keyboardMarkup;
     }
 
     private void processLoginStep(AppUser appUser, String text, Long chatId) {
@@ -334,14 +899,13 @@ public class MainServiceImpl implements MainService {
         faqRow.add(BTN_FAQ);
 
         if ("VOLUNTEER".equalsIgnoreCase(appUser.getRole())) {
-            row1.add(BTN_CARDS);
             row1.add(BTN_PROFILE);
+            row2.add(BTN_CARDS);
             row2.add(BTN_SELECTED_TASKS);
-            row2.add(BTN_GATHERINGS);
             keyboardMarkup.setKeyboard(List.of(row1, row2, faqRow));
         } else {
-            row1.add(BTN_CREATE_CARD);
             row1.add(BTN_PROFILE);
+            row2.add(BTN_CREATE_CARD);
             row2.add(BTN_MY_CARDS);
             keyboardMarkup.setKeyboard(List.of(row1, row2, faqRow));
         }
@@ -358,6 +922,13 @@ public class MainServiceImpl implements MainService {
 
     private void processMainMenu(AppUser appUser, String text, Long chatId) {
         String trimmedText = text.trim();
+
+        if ("Меню".equalsIgnoreCase(text.trim())) {
+            appUser.setState(UserState.IN_MAIN_MENU);
+            appUserDAO.save(appUser);
+            sendMainMenu(appUser, chatId);
+            return;
+        }
 
         // --- Меню редагування профілю ---
         if ("Додати фото".equalsIgnoreCase(trimmedText)) {
@@ -388,7 +959,7 @@ public class MainServiceImpl implements MainService {
 
         // --- Головне меню ---
         if (BTN_CARDS.equalsIgnoreCase(trimmedText)) {
-            sendAnswer("Тут буде список карток для волонтера.", chatId);
+            showAllCardsForVolunteer(chatId, appUser);
             return;
         }
         if (BTN_PROFILE.equalsIgnoreCase(trimmedText)) {
@@ -412,12 +983,8 @@ public class MainServiceImpl implements MainService {
             producerService.produceAnswer(msg);
             return;
         }
-        if ("Меню".equalsIgnoreCase(trimmedText)) {
-            sendMainMenu(appUser, chatId);
-            return;
-        }
         if (BTN_SELECTED_TASKS.equalsIgnoreCase(trimmedText)) {
-            sendAnswer("Тут буде перелік ваших обраних завдань.", chatId);
+            showVolunteerTakenCards(appUser, chatId);
             return;
         }
         if (BTN_GATHERINGS.equalsIgnoreCase(trimmedText)) {
@@ -425,11 +992,14 @@ public class MainServiceImpl implements MainService {
             return;
         }
         if (BTN_CREATE_CARD.equalsIgnoreCase(trimmedText)) {
-            sendAnswer("Тут можна створити нову картку.", chatId);
+            appUser.setState(UserState.CREATE_CARD_TITLE);
+            appUserDAO.save(appUser);
+            sendAnswerAndRemoveKeyboard("Введіть назву картки:", chatId);
+            cardSessionMap.put(appUser.getTelegramUserId(), new CardCreationSession());
             return;
         }
         if (BTN_MY_CARDS.equalsIgnoreCase(trimmedText)) {
-            sendAnswer("Тут буде список ваших карток.", chatId);
+            showMyCards(appUser, chatId);
             return;
         }
         if (BTN_FAQ.equalsIgnoreCase(trimmedText)) {
@@ -441,9 +1011,58 @@ public class MainServiceImpl implements MainService {
             return;
         }
 
-        // Якщо нічого не співпало, показуємо повідомлення і головне меню
         sendAnswer("Оберіть дію з меню нижче.", chatId);
         sendMainMenu(appUser, chatId);
+    }
+
+    private void showVolunteerTakenCards(AppUser user, Long chatId) {
+        List<HelpCard> cards = helpCardDAO.findByVolunteerAndStatusAndIsDeletedFalse(user, "Виконується");
+
+        StringBuilder sb = new StringBuilder();
+        if (cards.isEmpty()) {
+            sb.append("У вас немає взятих завдань.");
+        } else {
+            sb.append("Ваші взяті картки:\n\n");
+            int i = 1;
+            for (HelpCard card : cards) {
+                sb.append(i).append(". ").append(card.getTitle()).append("\n");
+                i++;
+            }
+            sb.append("\nДля перегляду картки введіть її номер (наприклад: 1)");
+        }
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildMenuKeyboard());
+
+        producerService.produceAnswer(message);
+
+
+        List<Long> cardIds = cards.stream()
+                .map(HelpCard::getId).collect(Collectors.toList());
+        editActionMap.put(user.getTelegramUserId(), cardIds.toString());
+        user.setState(UserState.VIEW_TAKEN_CARDS_LIST);
+        appUserDAO.save(user);
+    }
+
+    private ReplyKeyboardMarkup buildEditCardKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row1 = new KeyboardRow();
+        row1.add("Назва");
+        row1.add("Опис");
+
+        KeyboardRow row2 = new KeyboardRow();
+        row2.add("Контакти");
+        row2.add("Важливість");
+
+        KeyboardRow row3 = new KeyboardRow();
+        row3.add("Назад");
+
+        keyboardMarkup.setKeyboard(List.of(row1, row2, row3));
+        return keyboardMarkup;
     }
 
     private void sendAnswerAndRemoveKeyboard(String output, Long chatId) {
@@ -452,6 +1071,49 @@ public class MainServiceImpl implements MainService {
         sendMessage.setText(output);
         sendMessage.setReplyMarkup(new ReplyKeyboardRemove(true));
         producerService.produceAnswer(sendMessage);
+    }
+
+    private void showAllCardsForVolunteer(Long chatId, AppUser user) {
+        List<HelpCard> cards = helpCardDAO.findByStatusAndIsDeletedFalse("Відкрита");
+
+        StringBuilder sb = new StringBuilder();
+        if (cards.isEmpty()) {
+            sb.append("Поки що немає відкритих карток для допомоги.");
+        } else {
+            sb.append("Список карток:\n\n");
+            for (HelpCard card : cards) {
+                sb.append(card.getId())
+                        .append(". ")
+                        .append(card.getTitle())
+                        .append(" (")
+                        .append(card.getImportance())
+                        .append(")\n");
+            }
+            sb.append("\nДля перегляду картки введіть її id (наприклад: 3)");
+        }
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(sb.toString());
+        message.setReplyMarkup(buildMenuKeyboard());
+
+        producerService.produceAnswer(message);
+
+        user.setState(UserState.VIEW_CARDS_LIST);
+        appUserDAO.save(user);
+    }
+
+    private ReplyKeyboardMarkup buildImportanceKeyboard() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+
+        KeyboardRow row = new KeyboardRow();
+        row.add("LOW");
+        row.add("MEDIUM");
+        row.add("HIGH");
+
+        keyboardMarkup.setKeyboard(List.of(row));
+        return keyboardMarkup;
     }
 
     @Override
